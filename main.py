@@ -2,7 +2,6 @@ from fastapi import FastAPI, HTTPException, Query
 import subprocess
 from pathlib import Path
 import os
-import sys
 import requests
 import re
 import logging
@@ -72,13 +71,9 @@ def extract_code(text: str) -> str:
 @app.post("/run")
 async def run_task(task: str = Query(..., min_length=1)):
     try:
-        prompt = f"""Please generate Python code to complete the following task. 
-        Ensure all file operations stay within the /data directory and no deletions occur. 
-        Avoid using shell commands like curl or wget; instead, use Python's requests library. 
-        Output only the code in a markdown code block.
-
-        Task: {task}
-        """
+        prompt = f"""Please generate Python code to complete the following task. Ensure all file operations stay within the /data directory and no deletions occur. Avoid using shell commands like curl or wget; instead, use Python's requests library. Output only the code in a markdown code block.
+                Task: {task}
+            """
         llm_response = call_llm(prompt)
         code = extract_code(llm_response)
         validate_code(code)
@@ -86,42 +81,29 @@ async def run_task(task: str = Query(..., min_length=1)):
         code_path = Path("/tmp/generated_code.py")
         code_path.write_text(code)
 
-        # Set execute permissions dynamically if needed
-        code_path.chmod(0o755)  
-
-        logging.info(f"Executing generated code: {code}")
+        print(code)
 
         result = subprocess.run(
-            [sys.executable, str(code_path)],
+            ["python", str(code_path)],
             capture_output=True,
             text=True,
-            timeout=30  # Increased timeout for longer tasks
+            timeout=15
         )
-
-        # Log outputs for debugging
-        logging.info(f"STDOUT: {result.stdout}")
-        logging.info(f"STDERR: {result.stderr}")
-
+        
         if result.returncode != 0:
-            error_msg = f"Execution error: {result.stderr.strip()}"
+            error_msg = f"Execution error: {result.stderr}"
             logging.error(error_msg)
             raise HTTPException(status_code=500, detail=error_msg)
-
-        return {
-            "status": "success",
-            "stdout": result.stdout.strip(),
-            "stderr": result.stderr.strip()
-        }
-
+        
+        return {"status": "success"}
+    
     except HTTPException as he:
         raise he
     except subprocess.TimeoutExpired:
-        logging.error("Task execution timed out.")
         raise HTTPException(status_code=500, detail="Task execution timed out.")
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error.")
-
 
 @app.get("/read")
 async def read_file(path: str = Query(..., min_length=1)):
