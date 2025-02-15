@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+test.py
+evaluate.py
+datagen.py

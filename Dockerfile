@@ -9,6 +9,9 @@ COPY requirements.txt .
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y nodejs npm
+RUN npm install -g prettier@3.4.2
+RUN pip install sentence-transformers requests
 
 # Copy the current directory contents into the container at /app
 COPY . .

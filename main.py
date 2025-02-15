@@ -2,9 +2,15 @@ from fastapi import FastAPI, HTTPException, Query
 import subprocess
 from pathlib import Path
 import os
+import sys
 import requests
 import re
 import logging
+import sqlite3
+from pydantic import BaseModel
+import json
+import glob
+from datetime import datetime
 
 app = FastAPI()
 AIPROXY_TOKEN = os.environ.get("AIPROXY_TOKEN")
@@ -23,16 +29,24 @@ def call_llm(prompt: str) -> str:
         "Authorization": f"Bearer {AIPROXY_TOKEN}",
         "Content-Type": "application/json"
     }
+
     data = {
         "model": "gpt-4o-mini",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 1000
     }
+
     try:
-        response = requests.post("https://api.aiproxy.io/v1/chat/completions", headers=headers, json=data)
+        response = requests.post(
+            "http://aiproxy.sanand.workers.dev/openai/v1/chat/completions",
+            headers=headers,
+            json=data
+        )
         response.raise_for_status()
+
         return response.json()["choices"][0]["message"]["content"]
-    except Exception as e:
+
+    except requests.exceptions.RequestException as e:
         logging.error(f"Error calling LLM: {str(e)}")
         raise HTTPException(status_code=500, detail="LLM service error.")
 
@@ -58,35 +72,56 @@ def extract_code(text: str) -> str:
 @app.post("/run")
 async def run_task(task: str = Query(..., min_length=1)):
     try:
-        prompt = f"""Please generate Python code to complete the following task. Ensure all file operations stay within the /data directory and no deletions occur. Output only the code in a markdown code block. Task: {task}"""
+        prompt = f"""Please generate Python code to complete the following task. 
+        Ensure all file operations stay within the /data directory and no deletions occur. 
+        Avoid using shell commands like curl or wget; instead, use Python's requests library. 
+        Output only the code in a markdown code block.
+
+        Task: {task}
+        """
         llm_response = call_llm(prompt)
         code = extract_code(llm_response)
         validate_code(code)
         
         code_path = Path("/tmp/generated_code.py")
         code_path.write_text(code)
-        
+
+        # Set execute permissions dynamically if needed
+        code_path.chmod(0o755)  
+
+        logging.info(f"Executing generated code: {code}")
+
         result = subprocess.run(
-            ["python", str(code_path)],
+            [sys.executable, str(code_path)],
             capture_output=True,
             text=True,
-            timeout=15
+            timeout=30  # Increased timeout for longer tasks
         )
-        
+
+        # Log outputs for debugging
+        logging.info(f"STDOUT: {result.stdout}")
+        logging.info(f"STDERR: {result.stderr}")
+
         if result.returncode != 0:
-            error_msg = f"Execution error: {result.stderr}"
+            error_msg = f"Execution error: {result.stderr.strip()}"
             logging.error(error_msg)
             raise HTTPException(status_code=500, detail=error_msg)
-        
-        return {"status": "success"}
-    
+
+        return {
+            "status": "success",
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip()
+        }
+
     except HTTPException as he:
         raise he
     except subprocess.TimeoutExpired:
+        logging.error("Task execution timed out.")
         raise HTTPException(status_code=500, detail="Task execution timed out.")
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error.")
+
 
 @app.get("/read")
 async def read_file(path: str = Query(..., min_length=1)):
