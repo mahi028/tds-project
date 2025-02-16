@@ -26,7 +26,6 @@ def B3(url, save_path):
 #     subprocess.run(["git", "clone", repo_url, "/data/repo"])
 #     subprocess.run(["git", "-C", "/data/repo", "commit", "-m", commit_message])
 
-# B5: Run SQL Query
 def B5(db_path, query, output_filename):
     if not B12(db_path):
         return None

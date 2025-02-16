@@ -7,8 +7,13 @@ WORKDIR /app
 # Copy the requirements file into the container
 COPY requirements.txt .
 
-# Install any needed packages specified in requirements.txt
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+# Install required dependencies including Node.js and Prettier
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates nodejs npm && \
+    npm install -g prettier && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the current directory contents into the container at /app
